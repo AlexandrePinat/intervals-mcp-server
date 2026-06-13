@@ -52,8 +52,12 @@ def start_server(mcp_instance: FastMCP, transport: TransportAliases) -> None:
         mcp_instance (FastMCP): The FastMCP server instance to start.
         transport (TransportAliases): The transport type to use.
     """
-    host = mcp_instance.settings.host
-    port = mcp_instance.settings.port
+    # FastMCP résout host/port à l'import de l'instance ; pour un déploiement conteneur
+    # (Cloudflare Container / Fly), on ré-impose depuis l'env au runtime → écoute sur 0.0.0.0.
+    host = os.getenv("FASTMCP_HOST", mcp_instance.settings.host)
+    port = int(os.getenv("FASTMCP_PORT", str(mcp_instance.settings.port)))
+    mcp_instance.settings.host = host
+    mcp_instance.settings.port = port
 
     if transport == TransportAliases.STDIO:
         logger.info("Starting MCP server with stdio transport.")
