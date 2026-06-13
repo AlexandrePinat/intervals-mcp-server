@@ -1,0 +1,30 @@
+# Fly.io deployment — origine MCP Intervals.icu (coach trail).
+# App name must be globally unique: `fly launch` reconciles it, or edit below then `fly deploy`.
+app = 'coach-mcp-origin'
+primary_region = 'cdg'  # Paris (proche utilisateur + Intervals.icu UE)
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  MCP_TRANSPORT = 'streamable-http'
+  FASTMCP_HOST = '0.0.0.0'
+  FASTMCP_PORT = '8000'
+  # API_KEY + ATHLETE_ID NE sont PAS ici : injectés via `fly secrets set` (hors repo).
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = 'off'      # always-on : pas de scale-to-zero (évite cold start)
+  auto_start_machines = true
+  min_machines_running = 1
+
+  # Liveness : le serveur n'expose que POST /mcp (pas de /health GET) → check TCP.
+  [[http_service.tcp_checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'   # marge vs OOM observé sur gros get_activities (laptop à 256-ish)

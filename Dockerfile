@@ -22,5 +22,13 @@ COPY .env.example .env.example
 # Install the package and runtime dependencies
 RUN pip install --no-cache-dir .
 
-# Default command to run the MCP server using stdio transport
-CMD ["mcp", "run", "src/intervals_mcp_server/server.py"]
+# Off-laptop deployment defaults: streamable-HTTP, bind all interfaces, fixed port.
+# (host/port are read from FASTMCP_* by FastMCP at startup; transport from MCP_TRANSPORT)
+ENV MCP_TRANSPORT=streamable-http \
+    FASTMCP_HOST=0.0.0.0 \
+    FASTMCP_PORT=8000
+
+EXPOSE 8000
+
+# Run the server as an installed module so imports resolve regardless of CWD
+CMD ["python", "-m", "intervals_mcp_server.server"]
