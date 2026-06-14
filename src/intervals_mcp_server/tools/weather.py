@@ -69,8 +69,8 @@ async def get_weather(
         "longitude": longitude,
         "timezone": "auto",
         "forecast_days": 16,
-        "hourly": "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,uv_index",
-        "daily": "temperature_2m_max,temperature_2m_min,apparent_temperature_max,uv_index_max,precipitation_probability_max",
+        "hourly": "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,precipitation_probability,weather_code,uv_index",
+        "daily": "temperature_2m_max,temperature_2m_min,apparent_temperature_max,precipitation_sum,precipitation_probability_max,weather_code,uv_index_max",
     }
     try:
         resp = await client.get(OPEN_METEO_FORECAST, params=params, timeout=20.0)
@@ -122,23 +122,42 @@ async def get_weather(
     midday_app = _hour_vals("apparent_temperature")
     midday_uv = _hour_vals("uv_index")
     midday_rain = _hour_vals("precipitation_probability")
+    midday_mm = _hour_vals("precipitation")
+    midday_code = _hour_vals("weather_code")
+
+    def _wmo(code: Any) -> str:
+        """Label court pour les codes meteo WMO a risque (orage, pluie forte...)."""
+        if code is None:
+            return ""
+        c = int(code)
+        if c >= 95:
+            return " !!ORAGE!!"
+        if c in (65, 82):
+            return " (pluie forte)"
+        if c in (66, 67):
+            return " (pluie verglacante)"
+        if c in (71, 73, 75, 77, 85, 86):
+            return " (neige)"
+        return ""
 
     lines = [f"Meteo — {loc} — {target}"]
     if midday_t:
         lines.append(
             f"CRENEAU MIDI 12h-14h : temp {_mx(midday_t)}{tu} / "
             f"RESSENTIE max {_mx(midday_app)}{tu} / UV max {_mx(midday_uv)} / "
-            f"pluie {_mx(midday_rain)}%"
+            f"pluie {_mx(midday_rain)}% / {_mx(midday_mm)}mm{_wmo(_mx(midday_code))}"
         )
     else:
         lines.append("Creneau 12h-14h : pas de donnees horaires pour cette date.")
     lines.append(
         f"Jour : max {_d('temperature_2m_max')}{tu} / min {_d('temperature_2m_min')}{tu} / "
-        f"ressentie max {_d('apparent_temperature_max')}{tu} / "
-        f"UV max {_d('uv_index_max')} / pluie max {_d('precipitation_probability_max')}%"
+        f"ressentie max {_d('apparent_temperature_max')}{tu} / UV max {_d('uv_index_max')} / "
+        f"pluie {_d('precipitation_probability_max')}% ({_d('precipitation_sum')}mm){_wmo(_d('weather_code'))}"
     )
     lines.append(
-        "Regle chaleur : ressentie midi >= ~28-30C ou UV tres fort -> repli salle/tapis "
-        "(montee only, descente reportee au frais) ; piloter au RPE."
+        "Regle meteo : repli salle/tapis si (a) ressentie midi >= ~28-30C ou UV tres fort, "
+        "(b) ORAGE (securite foudre, NON negociable), ou (c) pluie forte / froid violent. "
+        "Pluie legere-moderee = on court (trail mouille = normal, la course peut l'etre). "
+        "Tapis = montee only -> descente reportee au frais/sec. Piloter au RPE."
     )
     return "\n".join(lines)
