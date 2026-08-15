@@ -10,7 +10,10 @@ readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.12"
 license = { text = "GPL-3.0-only" }
 authors = [{ name = "Marc Vilanova", email = "barker-riddle.8z@icloud.com" }]
-dependencies = ["mcp[cli]>=1.4.0", "httpx>=0.25.0", "python-dotenv>=1.0.0"]
+# ponytail: borne <2 = même major que uv.lock (1.22) ; l'image Docker installe sans
+# lockfile (pip install .), donc sans borne elle dérive vers mcp 2.x (cassant, vécu 15/08).
+# Upgrade path : faire installer l'image depuis uv.lock, puis lever la borne.
+dependencies = ["mcp[cli]>=1.4.0,<2", "httpx>=0.25.0", "python-dotenv>=1.0.0"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
