@@ -45,6 +45,9 @@ from intervals_mcp_server.server import (  # pylint: disable=wrong-import-positi
     delete_custom_item,
 )
 from intervals_mcp_server.tools import gear as gear_module  # pylint: disable=wrong-import-position
+from intervals_mcp_server.tools.activities import (  # pylint: disable=wrong-import-position
+    _downsample_stream,
+)
 from tests.sample_data import INTERVALS_DATA, POWER_CURVES_DATA  # pylint: disable=wrong-import-position
 
 
@@ -297,6 +300,49 @@ def test_get_activity_streams(monkeypatch):
     assert "watts" in result
     assert "heartrate" in result
     assert "Data Points: 11" in result
+
+
+def test_get_activity_streams_downsamples_long_series(monkeypatch):
+    """
+    Test a long series comes back bucket-averaged instead of truncated to a 10-value preview.
+    """
+    sample_streams = [
+        {
+            "type": "cadence",
+            "name": "cadence",
+            "data": list(range(1000)),
+            "valueType": "java.lang.Integer",
+        }
+    ]
+
+    async def fake_request(*_args, **_kwargs):
+        return sample_streams
+
+    monkeypatch.setattr("intervals_mcp_server.api.client.make_intervals_request", fake_request)
+    monkeypatch.setattr(
+        "intervals_mcp_server.tools.activities.make_intervals_request", fake_request
+    )
+    result = asyncio.run(get_activity_streams("i107537962", max_points=100))
+
+    assert "Data Points: 1000" in result
+    assert "Downsampled: 100 points, 10 samples/point" in result
+    assert "4.5" in result  # mean of the first bucket (0..9)
+    assert "994.5" in result  # mean of the last bucket (990..999)
+    assert "Last 5 values" not in result  # the preview-only behavior is gone
+
+
+def test_downsample_stream_edge_cases():
+    """
+    Test gaps stay visible, short series pass through untouched, non-numeric series bail out.
+    """
+    # A bucket holding no numeric sample yields None rather than a silent interpolation.
+    assert _downsample_stream([1.0, 3.0, None, None], max_points=2) == ([2.0, None], 2)
+
+    # Series already under the ceiling are returned as-is.
+    assert _downsample_stream([1, 2, 3], max_points=10) == ([1, 2, 3], 1)
+
+    # Non-numeric stream (latlng pairs): the caller must fall back to a raw preview.
+    assert _downsample_stream([[1.0, 2.0], [3.0, 4.0]], max_points=1) is None
 
 
 def test_add_or_update_event(monkeypatch):
@@ -704,9 +750,7 @@ def test_update_custom_item(monkeypatch):
     monkeypatch.setattr(
         "intervals_mcp_server.tools.custom_items.make_intervals_request", fake_request
     )
-    result = asyncio.run(
-        update_custom_item(item_id=1, name="Updated Chart", athlete_id="1")
-    )
+    result = asyncio.run(update_custom_item(item_id=1, name="Updated Chart", athlete_id="1"))
     assert "Successfully updated custom item:" in result
     assert "Updated Chart" in result
     assert "PUBLIC" in result
@@ -786,9 +830,7 @@ def test_get_gear_list(monkeypatch):
         return sample_gear
 
     monkeypatch.setattr("intervals_mcp_server.api.client.make_intervals_request", fake_request)
-    monkeypatch.setattr(
-        "intervals_mcp_server.tools.gear.make_intervals_request", fake_request
-    )
+    monkeypatch.setattr("intervals_mcp_server.tools.gear.make_intervals_request", fake_request)
 
     result = asyncio.run(get_gear_list(athlete_id="i1"))
 
@@ -810,9 +852,7 @@ def test_get_gear_list_empty(monkeypatch):
         return []
 
     monkeypatch.setattr("intervals_mcp_server.api.client.make_intervals_request", fake_request)
-    monkeypatch.setattr(
-        "intervals_mcp_server.tools.gear.make_intervals_request", fake_request
-    )
+    monkeypatch.setattr("intervals_mcp_server.tools.gear.make_intervals_request", fake_request)
 
     result = asyncio.run(get_gear_list(athlete_id="i1"))
     assert "No gear found" in result
@@ -840,9 +880,7 @@ def test_get_gear_list_cache_and_refresh(monkeypatch):
         return sample_gear
 
     monkeypatch.setattr("intervals_mcp_server.api.client.make_intervals_request", fake_request)
-    monkeypatch.setattr(
-        "intervals_mcp_server.tools.gear.make_intervals_request", fake_request
-    )
+    monkeypatch.setattr("intervals_mcp_server.tools.gear.make_intervals_request", fake_request)
 
     # First call: cache cold, one API hit expected.
     asyncio.run(get_gear_list(athlete_id="i1"))
@@ -886,9 +924,7 @@ def test_get_activity_details_resolves_gear_name(monkeypatch):
     monkeypatch.setattr(
         "intervals_mcp_server.tools.activities.make_intervals_request", fake_request
     )
-    monkeypatch.setattr(
-        "intervals_mcp_server.tools.gear.make_intervals_request", fake_request
-    )
+    monkeypatch.setattr("intervals_mcp_server.tools.gear.make_intervals_request", fake_request)
     # get_activity_details does not accept athlete_id; gear resolution falls
     # back to the configured ATHLETE_ID, which is unset under CI. Provide one.
     monkeypatch.setattr(gear_module.config, "athlete_id", "1")
@@ -940,9 +976,7 @@ def test_get_activities_resolves_gear_name(monkeypatch):
     monkeypatch.setattr(
         "intervals_mcp_server.tools.activities.make_intervals_request", fake_request
     )
-    monkeypatch.setattr(
-        "intervals_mcp_server.tools.gear.make_intervals_request", fake_request
-    )
+    monkeypatch.setattr("intervals_mcp_server.tools.gear.make_intervals_request", fake_request)
 
     result = asyncio.run(get_activities(athlete_id="1", limit=2, include_unnamed=True))
     assert "Ride 1" in result

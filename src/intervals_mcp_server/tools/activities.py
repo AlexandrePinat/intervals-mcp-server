@@ -4,6 +4,7 @@ Activity-related MCP tools for Intervals.icu.
 This module contains tools for retrieving and managing athlete activities.
 """
 
+import math
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -13,7 +14,11 @@ from intervals_mcp_server.tools.gear import (
     resolve_gear_for_activity,
     resolve_gear_for_activities,
 )
-from intervals_mcp_server.utils.formatting import format_activity_message, format_activity_summary, format_intervals
+from intervals_mcp_server.utils.formatting import (
+    format_activity_message,
+    format_activity_summary,
+    format_intervals,
+)
 from intervals_mcp_server.utils.validation import resolve_athlete_id, resolve_date_params
 
 # Import mcp instance from shared module for tool registration
@@ -168,9 +173,7 @@ async def get_activities(  # pylint: disable=too-many-arguments,too-many-return-
     activities = activities[:limit]
 
     # Resolve gear names (in-place injection of `_resolved_gear_name`)
-    await resolve_gear_for_activities(
-        activities, athlete_id=athlete_id_to_use, api_key=api_key
-    )
+    await resolve_gear_for_activities(activities, athlete_id=athlete_id_to_use, api_key=api_key)
 
     return _format_activities_response(activities, athlete_id_to_use, include_unnamed)
 
@@ -251,16 +254,58 @@ async def get_activity_intervals(activity_id: str, api_key: str | None = None) -
     return format_intervals(result)
 
 
+# Default ceiling on the number of points returned per stream. Intervals.icu
+# serves the raw 1 Hz series (~7 800 points for a 2 h run); returning only a
+# 10-value preview made any per-segment reading (cadence in the descents, HR
+# drift over a lap) impossible, and callers wrongly concluded the API itself
+# only served summaries. 500 points ~= one point per 15 s on a 2 h session.
+STREAM_MAX_POINTS = 500
+STREAM_MAX_POINTS_LIMIT = 2000
+
+
+def _is_number(value: Any) -> bool:
+    """True for a real numeric sample (``bool`` is an int in Python — exclude it)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _downsample_stream(data: list[Any], max_points: int) -> tuple[list[Any], int] | None:
+    """Bucket-average a numeric series down to at most ``max_points`` points.
+
+    Returns ``(series, samples_per_point)``, or ``None`` when the series holds no
+    numeric sample (e.g. a ``latlng`` stream) and the caller should fall back to a
+    raw preview. ``None`` samples — gaps in the Intervals.icu stream — are dropped
+    inside a bucket; a bucket with no numeric sample yields ``None`` so the gap
+    stays visible instead of being silently interpolated.
+    """
+    if not any(_is_number(value) for value in data):
+        return None
+
+    if len(data) <= max_points:
+        return data, 1
+
+    step = math.ceil(len(data) / max_points)
+    series: list[Any] = []
+    for start in range(0, len(data), step):
+        bucket = [value for value in data[start : start + step] if _is_number(value)]
+        series.append(round(sum(bucket) / len(bucket), 2) if bucket else None)
+    return series, step
+
+
 @mcp.tool()
 async def get_activity_streams(
     activity_id: str,
     api_key: str | None = None,
     stream_types: str | None = None,
+    max_points: int = STREAM_MAX_POINTS,
 ) -> str:
     """Get stream data for a specific activity from Intervals.icu
 
     This endpoint returns time-series data for an activity, including metrics like power, heart rate,
     cadence, altitude, distance, temperature, and velocity data.
+
+    The full 1 Hz series is fetched and bucket-averaged down to `max_points` points, so the
+    shape of the series is readable (per-segment cadence, HR drift, altitude profile). Ask for
+    fewer points when pulling many stream types at once, more when zooming on one metric.
 
     Args:
         activity_id: The Intervals.icu activity ID
@@ -268,7 +313,11 @@ async def get_activity_streams(
         stream_types: Comma-separated list of stream types to retrieve (optional, defaults to all available types)
                      Available types: time, watts, heartrate, cadence, altitude, distance,
                      core_temperature, skin_temperature, velocity_smooth
+        max_points: Maximum points returned per stream (default 500, clamped to 10-2000). Series
+                    longer than this are bucket-averaged; the output states the samples/point ratio.
     """
+    max_points = max(10, min(max_points, STREAM_MAX_POINTS_LIMIT))
+
     # Build query parameters
     params = {}
     if stream_types:
@@ -314,15 +363,21 @@ async def get_activity_streams(
         streams_summary += f"  Value Type: {value_type}\n"
         streams_summary += f"  Data Points: {len(data)}\n"
 
-        # Show first few and last few data points for preview
         if data:
-            if len(data) <= 10:
-                streams_summary += f"  Values: {data}\n"
+            downsampled = _downsample_stream(data, max_points)
+            if downsampled is None:
+                # Non-numeric stream (e.g. latlng pairs): a preview is all we can show.
+                streams_summary += f"  First 5 values: {data[:5]}\n"
+                streams_summary += f"  Last 5 values: {data[-5:]}\n"
             else:
-                preview_start = data[:5]
-                preview_end = data[-5:]
-                streams_summary += f"  First 5 values: {preview_start}\n"
-                streams_summary += f"  Last 5 values: {preview_end}\n"
+                series, step = downsampled
+                if step == 1:
+                    streams_summary += f"  Values: {series}\n"
+                else:
+                    streams_summary += (
+                        f"  Downsampled: {len(series)} points, "
+                        f"{step} samples/point (bucket mean): {series}\n"
+                    )
 
         streams_summary += "\n"
 
