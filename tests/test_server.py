@@ -153,6 +153,20 @@ def test_get_event_by_id(monkeypatch):
     assert "Test Event" in result
 
 
+def test_get_event_by_id_uses_events_endpoint(monkeypatch):
+    """Regression: endpoint is /events/{id} (plural); /event/{id} returns 404 on real events."""
+    captured: dict = {}
+
+    async def fake_request(url=None, **_kwargs):
+        captured["url"] = url
+        return {"id": 115873241, "date": "2024-01-01", "name": "Test Event", "description": "desc"}
+
+    monkeypatch.setattr("intervals_mcp_server.tools.events.make_intervals_request", fake_request)
+    result = asyncio.run(get_event_by_id("115873241", athlete_id="1"))
+    assert captured["url"] == "/athlete/1/events/115873241"
+    assert "Test Event" in result
+
+
 def test_get_wellness_data(monkeypatch):
     """
     Test get_wellness_data returns a formatted string containing wellness data for a given athlete.

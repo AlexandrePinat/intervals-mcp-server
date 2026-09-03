@@ -13,7 +13,11 @@ from intervals_mcp_server.config import get_config
 from intervals_mcp_server.utils.dates import get_default_end_date, get_default_future_end_date
 from intervals_mcp_server.utils.formatting import format_event_details, format_event_summary
 from intervals_mcp_server.utils.types import WorkoutDoc
-from intervals_mcp_server.utils.validation import resolve_activity_type, resolve_athlete_id, validate_date
+from intervals_mcp_server.utils.validation import (
+    resolve_activity_type,
+    resolve_athlete_id,
+    validate_date,
+)
 
 # Import mcp instance from shared module for tool registration
 from intervals_mcp_server.mcp_instance import mcp  # noqa: F401
@@ -164,7 +168,7 @@ async def get_event_by_id(
 
     # Call the Intervals.icu API
     result = await make_intervals_request(
-        url=f"/athlete/{athlete_id_to_use}/event/{event_id}", api_key=api_key
+        url=f"/athlete/{athlete_id_to_use}/events/{event_id}", api_key=api_key
     )
 
     if isinstance(result, dict) and "error" in result:
@@ -391,7 +395,7 @@ async def add_or_update_note(
             "name": name,
             "description": description,
             "start_date_local": validated_date + "T00:00:00",
-            "color": color
+            "color": color,
         }
 
         return await _create_or_update_event_request(
