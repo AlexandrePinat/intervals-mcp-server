@@ -136,7 +136,7 @@ def test_get_event_by_id(monkeypatch):
     """
     event = {
         "id": "e1",
-        "date": "2024-01-01",
+        "start_date_local": "2024-01-01T00:00:00",
         "name": "Test Event",
         "description": "desc",
         "race": True,
@@ -151,6 +151,7 @@ def test_get_event_by_id(monkeypatch):
     result = asyncio.run(get_event_by_id("e1", athlete_id="1"))
     assert "Event Details:" in result
     assert "Test Event" in result
+    assert "Date: 2024-01-01T00:00:00" in result
 
 
 def test_get_event_by_id_uses_events_endpoint(monkeypatch):
