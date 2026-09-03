@@ -429,7 +429,7 @@ def format_event_details(event: dict[str, Any]) -> str:
     event_details = f"""Event Details:
 
 ID: {event.get("id", "N/A")}
-Date: {event.get("date", "Unknown")}
+Date: {event.get("start_date_local", event.get("date", "Unknown"))}
 Name: {event.get("name", "Unnamed")}
 Description: {event.get("description", "No description")}"""
 
