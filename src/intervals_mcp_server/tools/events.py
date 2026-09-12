@@ -28,32 +28,34 @@ config = get_config()
 def _prepare_event_data(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     name: str,
     workout_type: str,
-    start_date: str,
     workout_doc: WorkoutDoc | None,
     moving_time: int | None,
     distance: int | None,
+    event_id: str | None,
 ) -> dict[str, Any]:
     """Prepare event data dictionary for API request.
 
     Many arguments are required to match the Intervals.icu API event structure.
     """
     resolved_workout_type = resolve_activity_type(name, workout_type)
-    return {
-        "start_date_local": start_date + "T00:00:00",
-        "category": "WORKOUT",
+    event_data: dict[str, Any] = {
         "name": name,
         "description": str(workout_doc) if workout_doc else None,
         "type": resolved_workout_type,
         "moving_time": moving_time,
         "distance": distance,
     }
+    # Category on creation only: an update must not turn a NOTE or a race back into a WORKOUT.
+    if not event_id:
+        event_data["category"] = "WORKOUT"
+    return event_data
 
 
 def _handle_event_response(
     result: dict[str, Any] | list[dict[str, Any]] | None,
     action: str,
     athlete_id: str,
-    start_date: str,
+    start_date: str | None,
 ) -> str:
     """Handle API response and format appropriate message."""
     if isinstance(result, dict) and "error" in result:
@@ -277,7 +279,8 @@ async def add_or_update_event(  # pylint: disable=too-many-arguments,too-many-po
     distance: int | None = None,
 ) -> str:
     """Post event for an athlete to Intervals.icu this follows the event api from intervals.icu
-    If event_id is provided, the event will be updated instead of created.
+    If event_id is provided, the event will be updated instead of created: it keeps its category
+    (NOTE, RACE_A...), and its date unless start_date is given.
 
     Many arguments are required as this MCP tool function maps directly to the Intervals.icu API parameters.
 
@@ -285,7 +288,7 @@ async def add_or_update_event(  # pylint: disable=too-many-arguments,too-many-po
         athlete_id: The Intervals.icu athlete ID (optional, will use ATHLETE_ID from .env if not provided)
         api_key: The Intervals.icu API key (optional, will use API_KEY from .env if not provided)
         event_id: The Intervals.icu event ID (optional, will use event_id from .env if not provided)
-        start_date: Start date in YYYY-MM-DD format (optional, defaults to today)
+        start_date: Start date in YYYY-MM-DD format (optional: today on creation, unchanged on update)
         name: Name of the activity
         workout_doc: steps as a list of Step objects (optional, but necessary to define workout steps)
         workout_type: Workout type (e.g. Ride, Run, Swim, Walk, Row)
@@ -345,16 +348,12 @@ async def add_or_update_event(  # pylint: disable=too-many-arguments,too-many-po
     if error_msg:
         return error_msg
 
-    if not start_date:
-        start_date = datetime.now().strftime("%Y-%m-%d")
-
     try:
-        validated_date = validate_date(start_date)
         event_data = _prepare_event_data(
-            name, workout_type, validated_date, workout_doc, moving_time, distance
+            name, workout_type, workout_doc, moving_time, distance, event_id
         )
         return await _create_or_update_event_request(
-            athlete_id_to_use, api_key, event_data, validated_date, event_id
+            athlete_id_to_use, api_key, event_data, start_date, event_id
         )
     except ValueError as e:
         return f"Error: {e}"
@@ -365,7 +364,7 @@ async def add_or_update_note(
     name: str,
     description: str,
     start_date: str | None = None,
-    color: str | None = "green",
+    color: str | None = None,
     athlete_id: str | None = None,
     api_key: str | None = None,
     event_id: str | None = None,
@@ -375,8 +374,9 @@ async def add_or_update_note(
     Args:
         name: Title of the note
         description: Plain text content of the note
-        start_date: Date in YYYY-MM-DD format (optional, defaults to today)
-        color: Color of the note (e.g. green, orange, red, blue)
+        start_date: Date in YYYY-MM-DD format (optional: today on creation, unchanged on update)
+        color: Color of the note, e.g. green, orange, red, blue (optional: green on creation,
+            unchanged on update)
         athlete_id: The Intervals.icu athlete ID (optional)
         api_key: The Intervals.icu API key (optional)
         event_id: The Intervals.icu event ID (optional, for updates)
@@ -385,21 +385,13 @@ async def add_or_update_note(
     if error_msg:
         return error_msg
 
-    if not start_date:
-        start_date = datetime.now().strftime("%Y-%m-%d")
-
     try:
-        validated_date = validate_date(start_date)
-        event_data = {
-            "category": "NOTE",
-            "name": name,
-            "description": description,
-            "start_date_local": validated_date + "T00:00:00",
-            "color": color,
-        }
-
+        # Category is sent on update too: that is how an existing WORKOUT becomes a NOTE.
+        event_data: dict[str, Any] = {"category": "NOTE", "name": name, "description": description}
+        if color or not event_id:
+            event_data["color"] = color or "green"
         return await _create_or_update_event_request(
-            athlete_id_to_use, api_key, event_data, validated_date, event_id
+            athlete_id_to_use, api_key, event_data, start_date, event_id
         )
     except ValueError as e:
         return f"Error: {e}"
@@ -409,21 +401,31 @@ async def _create_or_update_event_request(
     athlete_id: str,
     api_key: str | None,
     event_data: dict[str, Any],
-    start_date: str,
+    start_date: str | None,
     event_id: str | None,
 ) -> str:
     """Create or update an event via API request.
 
+    The update (PUT) only changes the fields it receives: without start_date the event keeps
+    its date, whereas a creation defaults to today.
+
     Args:
         athlete_id: The athlete ID.
         api_key: Optional API key.
-        event_data: Prepared event data dictionary.
-        start_date: Start date string for response formatting.
+        event_data: Prepared event data dictionary, start_date_local excluded.
+        start_date: Optional start date in YYYY-MM-DD format.
         event_id: Optional event ID for updates.
 
     Returns:
         Formatted response string.
+
+    Raises:
+        ValueError: If start_date is not in YYYY-MM-DD format.
     """
+    if not start_date and not event_id:
+        start_date = datetime.now().strftime("%Y-%m-%d")
+    if start_date:
+        event_data["start_date_local"] = validate_date(start_date) + "T00:00:00"
     url = f"/athlete/{athlete_id}/events"
     if event_id:
         url += f"/{event_id}"

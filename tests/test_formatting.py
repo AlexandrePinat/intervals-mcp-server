@@ -163,11 +163,13 @@ def test_format_event_summary():
         "id": "e1",
         "name": "Event1",
         "description": "desc",
-        "race": True,
+        "type": "Run",
+        "category": "RACE_A",
     }
     summary = format_event_summary(event)
     assert "Date: 2024-01-01" in summary
-    assert "Type: Race" in summary
+    assert "Type: Run" in summary
+    assert "Category: RACE_A" in summary
 
 
 def test_format_event_details():
@@ -179,21 +181,14 @@ def test_format_event_details():
         "date": "2024-01-01",
         "name": "Event1",
         "description": "desc",
-        "workout": {
-            "id": "w1",
-            "sport": "Ride",
-            "duration": 3600,
-            "tss": 50,
-            "intervals": [1, 2],
-        },
-        "race": True,
-        "priority": "A",
-        "result": "1st",
-        "calendar": {"name": "Main"},
+        "type": "Ride",
+        "category": "WORKOUT",
+        "icu_training_load": 50,
+        "moving_time": 3600,
     }
     details = format_event_details(event)
     assert "Event Details:" in details
-    assert "Workout Information:" in details
+    assert "Planned load: 50" in details
 
 
 def test_format_intervals():

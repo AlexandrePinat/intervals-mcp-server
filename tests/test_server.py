@@ -48,6 +48,9 @@ from intervals_mcp_server.tools import gear as gear_module  # pylint: disable=wr
 from intervals_mcp_server.tools.activities import (  # pylint: disable=wrong-import-position
     _downsample_stream,
 )
+from intervals_mcp_server.tools.events import (  # pylint: disable=wrong-import-position
+    add_or_update_note,
+)
 from tests.sample_data import INTERVALS_DATA, POWER_CURVES_DATA  # pylint: disable=wrong-import-position
 
 
@@ -166,6 +169,37 @@ def test_get_event_by_id_uses_events_endpoint(monkeypatch):
     result = asyncio.run(get_event_by_id("115873241", athlete_id="1"))
     assert captured["url"] == "/athlete/1/events/115873241"
     assert "Test Event" in result
+
+
+def test_event_tools_show_category_planned_load_and_steps(monkeypatch):
+    """Regression: WORKOUTs stripped of their steps kept their planned load on the fitness chart,
+    and nothing showed it; Type read a "workout" key Intervals never sends ("Other" everywhere)."""
+    event = {
+        "id": 115984547,
+        "start_date_local": "2026-09-20T00:00:00",
+        "name": "Long run",
+        "description": "desc",
+        "type": "Run",
+        "category": "WORKOUT",
+        "icu_training_load": 52,
+        "moving_time": 5400,
+        "workout_doc": {"steps": [{"duration": 600}, {"duration": 4800}]},
+    }
+
+    async def fake_request(*_args, **kwargs):
+        return [event] if kwargs["url"].endswith("/events") else event
+
+    monkeypatch.setattr("intervals_mcp_server.tools.events.make_intervals_request", fake_request)
+    summary = asyncio.run(
+        get_events(athlete_id="1", start_date="2026-09-20", end_date="2026-09-20")
+    )
+    details = asyncio.run(get_event_by_id("115984547", athlete_id="1"))
+    for result in (summary, details):
+        assert "Type: Run" in result
+        assert "Category: WORKOUT" in result
+        assert "Planned load: 52" in result
+        assert "Moving time: 5400 seconds" in result
+        assert "Steps: 2" in result
 
 
 def test_get_wellness_data(monkeypatch):
@@ -387,6 +421,50 @@ def test_add_or_update_event(monkeypatch):
     )
     assert "Successfully created event id:" in result
     assert "e123" in result
+
+
+def test_add_or_update_event_sends_category_on_creation_only(monkeypatch):
+    """Regression: an update forced category WORKOUT, turning a NOTE back into a workout."""
+    calls: list[dict] = []
+
+    async def fake_request(*_args, **kwargs):
+        calls.append(kwargs)
+        return {"id": 115984547}
+
+    monkeypatch.setattr("intervals_mcp_server.tools.events.make_intervals_request", fake_request)
+    asyncio.run(add_or_update_event("Run", "Footing", athlete_id="1", start_date="2026-09-20"))
+    asyncio.run(
+        add_or_update_event(
+            "Run", "Footing", athlete_id="1", event_id="115984547", start_date="2026-09-20"
+        )
+    )
+    created, updated = calls
+    assert created["method"] == "POST"
+    assert created["data"]["category"] == "WORKOUT"
+    assert updated["method"] == "PUT"
+    assert "category" not in updated["data"]
+
+
+def test_updates_keep_date_and_color_when_not_given(monkeypatch):
+    """Regression: an update without start_date moved the event to today, and
+    add_or_update_note overwrote its color with the "green" default."""
+    sent: list[dict] = []
+
+    async def fake_request(*_args, **kwargs):
+        sent.append(kwargs["data"])
+        return {"id": 115984547}
+
+    monkeypatch.setattr("intervals_mcp_server.tools.events.make_intervals_request", fake_request)
+    asyncio.run(add_or_update_event("Run", "Footing", athlete_id="1", event_id="115984547"))
+    asyncio.run(add_or_update_note("Skipped", "reason", athlete_id="1", event_id="115984547"))
+    asyncio.run(add_or_update_note("Strength", "core", athlete_id="1"))
+    event_update, note_update, note_created = sent
+    assert "start_date_local" not in event_update
+    assert "start_date_local" not in note_update
+    assert "color" not in note_update
+    assert note_update["category"] == "NOTE"
+    assert note_created["start_date_local"].endswith("T00:00:00")
+    assert note_created["color"] == "green"
 
 
 def test_get_activity_messages(monkeypatch):
