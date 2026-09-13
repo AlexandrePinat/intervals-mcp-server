@@ -1,8 +1,8 @@
 """
-Unit tests for resolve_activity_type in intervals_mcp_server.utils.validation.
+Unit tests for resolve_activity_type and resolve_athlete_id in intervals_mcp_server.utils.validation.
 """
 
-from intervals_mcp_server.utils.validation import resolve_activity_type
+from intervals_mcp_server.utils.validation import resolve_activity_type, resolve_athlete_id
 
 
 def test_explicit_activity_type_returned_as_is():
@@ -52,3 +52,13 @@ def test_case_insensitive():
     """Keyword matching is case-insensitive."""
     assert resolve_activity_type("MORNING RUN") == "Run"
     assert resolve_activity_type("SWIM") == "Swim"
+
+
+def test_resolve_athlete_id_rejects_ids_that_would_reroute_the_url():
+    """A per-call athlete_id is interpolated into URL paths: only i?digits is accepted."""
+    assert resolve_athlete_id("i123") == ("i123", None)
+    assert resolve_athlete_id(None, "456") == ("456", None)
+    for bad in ["i1/../x", "1?evil=1", "athlete"]:
+        athlete_id, error = resolve_athlete_id(bad)
+        assert athlete_id == ""
+        assert error and error.startswith("Error:")

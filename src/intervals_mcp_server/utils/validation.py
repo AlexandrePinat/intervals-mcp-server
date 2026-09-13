@@ -67,6 +67,11 @@ def resolve_athlete_id(
             "",
             "Error: No athlete ID provided and no default ATHLETE_ID found in environment variables.",
         )
+    # The id is interpolated into URL paths: "i1/../x" or "1?a=b" would reroute the request.
+    try:
+        validate_athlete_id(athlete_id_to_use)
+    except ValueError as e:
+        return "", f"Error: {e}"
     return athlete_id_to_use, None
 
 
