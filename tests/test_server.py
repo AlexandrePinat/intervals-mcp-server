@@ -1103,3 +1103,41 @@ def test_delete_events_by_date_range_category(monkeypatch):
     )
     assert deleted == ["/athlete/1/events/1", "/athlete/1/events/4"]
     assert "Deleted 2 WORKOUT events" in result
+
+
+def test_get_gear_list_does_not_cache_errors(monkeypatch):
+    """A failed /gear call is not cached: the next call retries instead of reporting no gear."""
+    _reset_gear_cache()
+    responses = [
+        {"error": True, "message": "429 Too Many Requests"},
+        [{"id": "b1", "type": "Shoes", "name": "Speedgoat 6"}],
+    ]
+
+    async def fake_request(*_args, **_kwargs):
+        return responses.pop(0)
+
+    monkeypatch.setattr("intervals_mcp_server.tools.gear.make_intervals_request", fake_request)
+
+    assert "No gear found" in asyncio.run(get_gear_list(athlete_id="i1"))
+    assert "Speedgoat 6" in asyncio.run(get_gear_list(athlete_id="i1"))
+
+
+def test_get_activities_stays_in_requested_range(monkeypatch):
+    """Fewer named activities than `limit` no longer pulls the 60 days before start_date."""
+    _reset_gear_cache()
+    urls = []
+
+    async def fake_request(url=None, **_kwargs):
+        urls.append(url)
+        return [{"name": "Only run", "id": 1, "type": "Run"}]
+
+    monkeypatch.setattr(
+        "intervals_mcp_server.tools.activities.make_intervals_request", fake_request
+    )
+    monkeypatch.setattr("intervals_mcp_server.tools.gear.make_intervals_request", fake_request)
+
+    result = asyncio.run(
+        get_activities(athlete_id="1", start_date="2024-06-01", end_date="2024-06-30", limit=10)
+    )
+    assert "Only run" in result
+    assert [url for url in urls if url.endswith("/activities")] == ["/athlete/1/activities"]
