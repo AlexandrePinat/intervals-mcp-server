@@ -33,6 +33,7 @@ from intervals_mcp_server.server import (  # pylint: disable=wrong-import-positi
     get_activity_messages,
     get_activity_streams,
     add_or_update_event,
+    delete_events_by_date_range,
     get_athlete_power_curves,
     get_event_by_id,
     get_events,
@@ -1076,3 +1077,29 @@ def test_get_activities_resolves_gear_name(monkeypatch):
     assert "Ride 2" in result
     assert "Name: Litening Air" in result
     assert "Name: S-Works Tarmac SL8" in result
+
+
+def test_delete_events_by_date_range_category(monkeypatch):
+    """With category, a range delete leaves the other categories (races, notes) alone."""
+    events = [
+        {"id": 1, "category": "WORKOUT"},
+        {"id": 2, "category": "RACE_A"},
+        {"id": 3, "category": "NOTE"},
+        {"id": 4, "category": "WORKOUT"},
+        {"id": 5},
+    ]
+    deleted = []
+
+    async def fake_request(url=None, method="GET", **_kwargs):
+        if method == "DELETE":
+            deleted.append(url)
+            return {}
+        return events
+
+    monkeypatch.setattr("intervals_mcp_server.tools.events.make_intervals_request", fake_request)
+
+    result = asyncio.run(
+        delete_events_by_date_range("2024-01-01", "2024-01-07", athlete_id="1", category="workout")
+    )
+    assert deleted == ["/athlete/1/events/1", "/athlete/1/events/4"]
+    assert "Deleted 2 WORKOUT events" in result

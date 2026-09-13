@@ -257,9 +257,9 @@ Once the server is running and Claude Desktop is configured, you can use the fol
 - `get_wellness_data`: Fetch wellness data
 - `get_events`: Retrieve upcoming events (workouts, races, etc.)
 - `get_event_by_id`: Get detailed information for a specific event
-- `add_or_update_event`: Create or update an event (workout, race, note, etc.)
+- `add_or_update_event`: Create a planned workout, or update an event (its category is kept)
 - `delete_event`: Delete a specific event
-- `delete_events_by_date_range`: Delete events within a date range
+- `delete_events_by_date_range`: Delete events within a date range, optionally only one category (e.g. `WORKOUT`)
 - `get_custom_items`: Get custom items (charts, custom fields, zones, etc.) for an athlete
 - `get_custom_item_by_id`: Get detailed information for a specific custom item
 - `create_custom_item`: Create a new custom item for an athlete
