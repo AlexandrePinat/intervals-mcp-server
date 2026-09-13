@@ -56,16 +56,20 @@ async def get_wellness_data(
             f"No wellness data found for athlete {athlete_id_to_use} in the specified date range."
         )
 
-    wellness_summary = "Wellness Data:\n\n"
+    wellness_summary = ""  # each entry already opens with its own "Wellness Data:" header
 
     if isinstance(result, dict):
         for date_str, data in result.items():
             if isinstance(data, dict) and "date" not in data:
                 data["date"] = date_str
-            wellness_summary += format_wellness_entry(data, include_all_fields=include_all_fields) + "\n\n"
+            wellness_summary += (
+                format_wellness_entry(data, include_all_fields=include_all_fields) + "\n\n"
+            )
     elif isinstance(result, list):
         for entry in result:
             if isinstance(entry, dict):
-                wellness_summary += format_wellness_entry(entry, include_all_fields=include_all_fields) + "\n\n"
+                wellness_summary += (
+                    format_wellness_entry(entry, include_all_fields=include_all_fields) + "\n\n"
+                )
 
     return wellness_summary
