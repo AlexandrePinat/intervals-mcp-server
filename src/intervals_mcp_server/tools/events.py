@@ -4,7 +4,6 @@ Event-related MCP tools for Intervals.icu.
 This module contains tools for retrieving, creating, updating, and deleting athlete events.
 """
 
-import json
 from datetime import datetime
 from typing import Any
 
@@ -209,7 +208,7 @@ async def delete_event(
     )
     if isinstance(result, dict) and "error" in result:
         return f"Error deleting event: {result.get('message')}"
-    return json.dumps(result, indent=2)
+    return f"Successfully deleted event {event_id}."
 
 
 async def _fetch_events_for_deletion(
@@ -242,6 +241,7 @@ async def delete_events_by_date_range(
     end_date: str,
     athlete_id: str | None = None,
     api_key: str | None = None,
+    category: str | None = None,
 ) -> str:
     """Delete events for an athlete from Intervals.icu in the specified date range.
 
@@ -250,6 +250,8 @@ async def delete_events_by_date_range(
         api_key: The Intervals.icu API key (optional, will use API_KEY from .env if not provided)
         start_date: Start date in YYYY-MM-DD format
         end_date: End date in YYYY-MM-DD format
+        category: Only delete this category, e.g. WORKOUT (case-insensitive). Without it every
+            event in the range is deleted, notes and races included.
     """
     athlete_id_to_use, error_msg = resolve_athlete_id(athlete_id, config.athlete_id)
     if error_msg:
@@ -261,9 +263,12 @@ async def delete_events_by_date_range(
     if error_msg:
         return error_msg
 
+    if category:
+        events = [e for e in events if (e.get("category") or "").upper() == category.upper()]
     failed_events = await _delete_events_list(athlete_id_to_use, api_key, events)
     deleted_count = len(events) - len(failed_events)
-    return f"Deleted {deleted_count} events. Failed to delete {len(failed_events)} events: {failed_events}"
+    scope = f"{category.upper()} " if category else ""
+    return f"Deleted {deleted_count} {scope}events. Failed to delete {len(failed_events)} events: {failed_events}"
 
 
 @mcp.tool()
@@ -287,7 +292,7 @@ async def add_or_update_event(  # pylint: disable=too-many-arguments,too-many-po
     Args:
         athlete_id: The Intervals.icu athlete ID (optional, will use ATHLETE_ID from .env if not provided)
         api_key: The Intervals.icu API key (optional, will use API_KEY from .env if not provided)
-        event_id: The Intervals.icu event ID (optional, will use event_id from .env if not provided)
+        event_id: The Intervals.icu event ID to update (optional: without it, a new event is created)
         start_date: Start date in YYYY-MM-DD format (optional: today on creation, unchanged on update)
         name: Name of the activity
         workout_doc: steps as a list of Step objects (optional, but necessary to define workout steps)

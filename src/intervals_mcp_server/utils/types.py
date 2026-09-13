@@ -391,6 +391,9 @@ class Step:  # pylint: disable=too-many-instance-attributes
         Many branches are required to format all optional fields and handle different step types.
         """
         val = ""
+        # Intervals.icu takes the text before the first duration as the step cue shown on the
+        # watch: "- Sprint 40mtr Z5 HR", whereas "- 40mtr Z5 HR Sprint" loses the label.
+        cue = f"{self.text} " if self.text else ""
         if self.reps is not None:
             if nested:
                 raise ValueError("Nested steps not supported")
@@ -403,9 +406,11 @@ class Step:  # pylint: disable=too-many-instance-attributes
 
             val += ""
             if self.duration is not None:
-                val += f"- {self._format_duration()} "
+                val += f"- {cue}{self._format_duration()} "
+                cue = ""
             elif self.distance is not None:
-                val += f"- {self._format_distance()} "
+                val += f"- {cue}{self._format_distance()} "
+                cue = ""
 
             if self.freeride:
                 val += "freeride "
@@ -426,8 +431,8 @@ class Step:  # pylint: disable=too-many-instance-attributes
                 val += f"{self.pace} "
             if self.cadence is not None:
                 val += f"{self.cadence} "
-        if self.text is not None:
-            val += f"{self.text} "
+        # Repeat header label ("10x Main") or a text-only line.
+        val += cue
         if self.reps is not None and self.steps is not None:
             for step in self.steps:
                 # Using _to_str instead of __str__ because we need the nested=True arg;

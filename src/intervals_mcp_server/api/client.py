@@ -140,13 +140,13 @@ def _parse_response(
     Returns:
         Parsed JSON response or error dict.
     """
+    # Status first: a 502/503 with an HTML body is an HTTP error, not "Invalid JSON".
+    response.raise_for_status()
     try:
-        response_data = response.json() if response.content else {}
+        return response.json() if response.content else {}
     except JSONDecodeError:
         logger.error("Invalid JSON in response from: %s", full_url)
         return {"error": True, "message": "Invalid JSON in response"}
-    response.raise_for_status()
-    return response_data
 
 
 async def make_intervals_request(

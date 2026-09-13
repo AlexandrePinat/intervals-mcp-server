@@ -12,6 +12,9 @@ import pathlib
 import sys
 from json import JSONDecodeError
 
+import httpx
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 os.environ.setdefault("API_KEY", "test")
 os.environ.setdefault("ATHLETE_ID", "i1")
@@ -92,6 +95,7 @@ def test_make_intervals_request_bad_json(monkeypatch, caplog):
 
     # Ensure the config singleton has an API key, regardless of test execution order
     from intervals_mcp_server.config import get_config  # pylint: disable=import-outside-toplevel
+
     monkeypatch.setattr(get_config(), "api_key", "test")
 
     with caplog.at_level(logging.ERROR):
@@ -99,3 +103,12 @@ def test_make_intervals_request_bad_json(monkeypatch, caplog):
 
     assert result["error"] is True
     assert "Invalid JSON in response" in result["message"]
+
+
+def test_parse_response_keeps_http_status_for_non_json_error_body():
+    """A 503 with an HTML body is an HTTP error (status kept), not "Invalid JSON"."""
+    response = httpx.Response(
+        503, content=b"<html>down</html>", request=httpx.Request("GET", "https://intervals.icu")
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        api_client._parse_response(response, "https://intervals.icu")  # pylint: disable=protected-access

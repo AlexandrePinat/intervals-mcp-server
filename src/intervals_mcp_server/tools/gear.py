@@ -93,9 +93,10 @@ async def get_gear_raw(
     if not refresh and athlete_id_to_use in _GEAR_RAW_CACHE:
         return _GEAR_RAW_CACHE[athlete_id_to_use]
 
-    result = await make_intervals_request(
-        url=f"/athlete/{athlete_id_to_use}/gear", api_key=api_key
-    )
+    result = await make_intervals_request(url=f"/athlete/{athlete_id_to_use}/gear", api_key=api_key)
+    if isinstance(result, dict) and "error" in result:
+        # Not cached: a transient 429/503 would otherwise blank the gear until restart.
+        return []
     items = _items_from_response(result)
     _GEAR_RAW_CACHE[athlete_id_to_use] = items
     return items
@@ -144,9 +145,7 @@ async def resolve_gear_for_activities(
     _ = await get_gear_map(athlete_id=athlete_id, api_key=api_key)
     for activity in activities:
         if isinstance(activity, dict):
-            await resolve_gear_for_activity(
-                activity, athlete_id=athlete_id, api_key=api_key
-            )
+            await resolve_gear_for_activity(activity, athlete_id=athlete_id, api_key=api_key)
 
 
 @mcp.tool()
@@ -174,9 +173,7 @@ async def get_gear_list(
 
     # Single fetch path: get_gear_raw consults the cache and only hits the API
     # on a cold cache or when refresh=True.
-    items = await get_gear_raw(
-        athlete_id=athlete_id_to_use, api_key=api_key, refresh=refresh
-    )
+    items = await get_gear_raw(athlete_id=athlete_id_to_use, api_key=api_key, refresh=refresh)
 
     if not items:
         return f"No gear found for athlete {athlete_id_to_use}."
