@@ -178,6 +178,10 @@ class Value:
             return f"{float_to_str(value)}W"
         if self.units in [ValueUnits.CADENCE]:
             return f"{float_to_str(value)}rpm"
+        if self.units in [ValueUnits.MINS_KM, ValueUnits.MINS_MILE]:
+            # Decimal minutes to M:SS, rounded to the second: 4.6667 -> "4:40".
+            minutes, seconds = divmod(round(value * 60), 60)
+            return f"{minutes}:{seconds:02d}"
         return float_to_str(value)
 
     def _format_units(self) -> str:
@@ -192,6 +196,8 @@ class Value:
             ValueUnits.PERCENT_FTP: "ftp",
             ValueUnits.POWER_ZONE: "W",
             ValueUnits.CADENCE: "Cadence",
+            ValueUnits.MINS_KM: "/km Pace",
+            ValueUnits.MINS_MILE: "/mi Pace",
         }
         if self.units is None:
             return ""
@@ -203,6 +209,8 @@ class Value:
             val += f"{self._format_value(self.start)}-{self._format_value(self.end)} "
         if self.value is not None:
             val += f"{self._format_value(self.value)} "
+        if self.units in [ValueUnits.MINS_KM, ValueUnits.MINS_MILE]:
+            val = val.rstrip()  # absolute pace: the distance unit sticks, "4:30-4:40/km Pace"
         if self.units is not None:
             val += f"{self._format_units()} "
         if self.target is not None:
