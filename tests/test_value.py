@@ -4,6 +4,7 @@ Unit tests for the Value and Step dataclasses in intervals_mcp_server.utils.type
 These tests verify that the Value dataclass correctly handles:
 - String formatting for percent FTP units
 - Ramp intervals (start/end values)
+- Absolute pace (M:SS per km or mile, then "Pace")
 - Deserialisation of pace/swim-pace unit strings returned by the Intervals.icu API
 and that a Step renders its text as the cue before the duration.
 """
@@ -23,6 +24,19 @@ def test_str_ramp_percent_ftp():
     """Test formatting ramp intervals with percentage FTP."""
     val = Value(start=65, end=85, units=ValueUnits.PERCENT_FTP)
     assert str(val) == "65%-85% ftp"
+
+
+@pytest.mark.parametrize(
+    "pace,expected",
+    [
+        ({"start": 4.5, "end": 4.6667, "units": "MINS_KM"}, "4:30-4:40/km Pace"),
+        ({"value": 7.5, "units": "MINS_MILE"}, "7:30/mi Pace"),
+    ],
+)
+def test_str_absolute_pace(pace, expected):
+    """Regression: an absolute pace went out as a bare float ("4.5-4.6667"), which Intervals.icu
+    does not read as a target. The workout builder wants M:SS per distance unit, then "Pace"."""
+    assert str(Value.from_dict(pace)) == expected
 
 
 @pytest.mark.parametrize(

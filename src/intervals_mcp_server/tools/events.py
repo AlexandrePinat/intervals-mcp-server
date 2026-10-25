@@ -327,6 +327,8 @@ async def add_or_update_event(  # pylint: disable=too-many-arguments,too-many-po
             Cadence: {"cadence": {"value": 90, "units": "cadence"}}
             Pace by ftp: {"pace": {"value": 80, "units": "%pace"}}
             Pace by zone: {"pace": {"value": 2, "units": "pace_zone"}}
+            Absolute pace, in decimal minutes per km ("MINS_MILE" per mile), sent as "4:30-4:40/km Pace":
+                {"pace": {"start": 4.5, "end": 4.6667, "units": "MINS_KM"}}
             Zone by power: {"power": {"value": 2, "units": "power_zone"}}
             Zone by heart rate: {"hr": {"value": 2, "units": "hr_zone"}}
         Ranges: Specify ranges for power, heart rate, or cadence:

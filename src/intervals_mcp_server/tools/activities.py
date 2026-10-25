@@ -235,10 +235,10 @@ def _downsample_stream(data: list[Any], max_points: int) -> tuple[list[Any], int
     """Bucket-average a numeric series down to at most ``max_points`` points.
 
     Returns ``(series, samples_per_point)``, or ``None`` when the series holds no
-    numeric sample (e.g. a ``latlng`` stream) and the caller should fall back to a
-    raw preview. ``None`` samples — gaps in the Intervals.icu stream — are dropped
-    inside a bucket; a bucket with no numeric sample yields ``None`` so the gap
-    stays visible instead of being silently interpolated.
+    numeric sample and the caller should fall back to a raw preview. ``None``
+    samples — gaps in the Intervals.icu stream — are dropped inside a bucket; a
+    bucket with no numeric sample yields ``None`` so the gap stays visible instead
+    of being silently interpolated.
     """
     if not any(_is_number(value) for value in data):
         return None
@@ -254,6 +254,25 @@ def _downsample_stream(data: list[Any], max_points: int) -> tuple[list[Any], int
     return series, step
 
 
+def _sample_latlng(lats: list[Any], lngs: list[Any], max_points: int) -> tuple[list[Any], int]:
+    """Pair the latitudes (``data``) with the longitudes (``data2``), one fix per bucket.
+
+    Unlike the other streams, the GPS track is sampled, not averaged: a bucket mean cuts the
+    corners of the track, and 2 decimals move a point by up to ~1 km. Each bucket keeps its
+    first fix, rounded to 6 decimals (~0.1 m); a bucket without one (GPS dropout) yields ``None``.
+    """
+    fixes = [
+        [round(lat, 6), round(lng, 6)] if _is_number(lat) and _is_number(lng) else None
+        for lat, lng in zip(lats, lngs, strict=False)
+    ]
+    step = math.ceil(len(fixes) / max_points)
+    series = [
+        next((fix for fix in fixes[start : start + step] if fix is not None), None)
+        for start in range(0, len(fixes), step)
+    ]
+    return series, step
+
+
 @mcp.tool()
 async def get_activity_streams(
     activity_id: str,
@@ -264,20 +283,23 @@ async def get_activity_streams(
     """Get stream data for a specific activity from Intervals.icu
 
     This endpoint returns time-series data for an activity, including metrics like power, heart rate,
-    cadence, altitude, distance, temperature, and velocity data.
+    cadence, altitude, distance, temperature, velocity data and the GPS track.
 
     The full 1 Hz series is fetched and bucket-averaged down to `max_points` points, so the
     shape of the series is readable (per-segment cadence, HR drift, altitude profile). Ask for
     fewer points when pulling many stream types at once, more when zooming on one metric.
+    The GPS track (latlng) is sampled instead: one real [lat, lng] fix per bucket, 6 decimals.
 
     Args:
         activity_id: The Intervals.icu activity ID
         api_key: The Intervals.icu API key (optional, will use API_KEY from .env if not provided)
-        stream_types: Comma-separated list of stream types to retrieve (optional, defaults to all available types)
+        stream_types: Comma-separated list of stream types to retrieve (optional, defaults to
+                     time, watts, heartrate, cadence, altitude, distance, velocity_smooth)
                      Available types: time, watts, heartrate, cadence, altitude, distance,
-                     core_temperature, skin_temperature, velocity_smooth
+                     core_temperature, skin_temperature, velocity_smooth, latlng
         max_points: Maximum points returned per stream (default 500, clamped to 10-2000). Series
-                    longer than this are bucket-averaged; the output states the samples/point ratio.
+                    longer than this are bucket-averaged (latlng: sampled); the output states the
+                    samples/point ratio.
     """
     max_points = max(10, min(max_points, STREAM_MAX_POINTS_LIMIT))
 
@@ -320,16 +342,23 @@ async def get_activity_streams(
         stream_type = stream.get("type", "unknown")
         stream_name = stream.get("name", stream_type)
         data = stream.get("data", [])
+        lngs = stream.get("data2")  # only latlng fills it: latitudes in data, longitudes here
         value_type = stream.get("valueType", "")
 
         streams_summary += f"Stream: {stream_name} ({stream_type})\n"
         streams_summary += f"  Value Type: {value_type}\n"
         streams_summary += f"  Data Points: {len(data)}\n"
 
-        if data:
+        if data and lngs:
+            series, step = _sample_latlng(data, lngs, max_points)
+            streams_summary += (
+                f"  Sampled: {len(series)} [lat, lng] fixes, "
+                f"1 every {step} samples (not averaged): {series}\n"
+            )
+        elif data:
             downsampled = _downsample_stream(data, max_points)
             if downsampled is None:
-                # Non-numeric stream (e.g. latlng pairs): a preview is all we can show.
+                # Non-numeric stream: a preview is all we can show.
                 streams_summary += f"  First 5 values: {data[:5]}\n"
                 streams_summary += f"  Last 5 values: {data[-5:]}\n"
             else:

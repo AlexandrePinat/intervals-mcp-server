@@ -48,6 +48,7 @@ from intervals_mcp_server.server import (  # pylint: disable=wrong-import-positi
 from intervals_mcp_server.tools import gear as gear_module  # pylint: disable=wrong-import-position
 from intervals_mcp_server.tools.activities import (  # pylint: disable=wrong-import-position
     _downsample_stream,
+    _sample_latlng,
 )
 from intervals_mcp_server.tools.events import (  # pylint: disable=wrong-import-position
     add_or_update_note,
@@ -391,8 +392,39 @@ def test_downsample_stream_edge_cases():
     # Series already under the ceiling are returned as-is.
     assert _downsample_stream([1, 2, 3], max_points=10) == ([1, 2, 3], 1)
 
-    # Non-numeric stream (latlng pairs): the caller must fall back to a raw preview.
-    assert _downsample_stream([[1.0, 2.0], [3.0, 4.0]], max_points=1) is None
+    # Non-numeric stream (booleans): the caller must fall back to a raw preview.
+    assert _downsample_stream([True, False], max_points=1) is None
+
+
+def test_get_activity_streams_latlng_keeps_longitude_and_precision(monkeypatch):
+    """
+    Regression: latlng came back as bucket means of the latitudes alone, rounded to 2 decimals
+    (~1 km), because Intervals.icu serves the longitudes in data2. Each bucket must keep one
+    real [lat, lng] fix, unrounded below the meter.
+    """
+    lats = [48.886712 + i * 1e-5 for i in range(1000)]
+    lngs = [2.343101 + i * 1e-5 for i in range(1000)]
+    sample_streams = [
+        {"type": "latlng", "data": lats, "data2": lngs, "valueType": "java.lang.Float"}
+    ]
+
+    async def fake_request(*_args, **_kwargs):
+        return sample_streams
+
+    monkeypatch.setattr(
+        "intervals_mcp_server.tools.activities.make_intervals_request", fake_request
+    )
+    result = asyncio.run(get_activity_streams("i156986317", stream_types="latlng", max_points=100))
+
+    assert "Sampled: 100 [lat, lng] fixes, 1 every 10 samples" in result
+    assert "[48.886712, 2.343101]" in result  # first fix of the first bucket, not a mean
+    assert "[48.896612, 2.353001]" in result  # first fix of the last bucket (sample 990)
+
+    # A GPS dropout: the bucket keeps its first valid fix, an empty bucket stays visible.
+    assert _sample_latlng([None, 1.0, None, None], [None, 2.0, None, None], max_points=2) == (
+        [[1.0, 2.0], None],
+        2,
+    )
 
 
 def test_add_or_update_event(monkeypatch):
