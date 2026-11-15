@@ -8,6 +8,7 @@ including request management, error handling, and client lifecycle.
 from json import JSONDecodeError
 import json
 import logging
+import re
 import sys
 from http import HTTPStatus
 from typing import Any
@@ -17,6 +18,10 @@ import httpx  # pylint: disable=import-error
 from intervals_mcp_server.config import get_config
 
 logger = logging.getLogger("intervals_icu_mcp_server")
+
+# Event and activity ids are interpolated into the path: "../../../activity/i1" or "1?others=true"
+# would reach another Intervals.icu endpoint (delete_event deleting an activity).
+_PLAIN_PATH = re.compile(r"(/[A-Za-z0-9_-]+)+")
 
 # Create a single AsyncClient instance for all requests (lazily initialized)
 # This can be monkeypatched via server.httpx_client for testing
@@ -140,6 +145,13 @@ async def make_intervals_request(
     Returns:
         dict[str, Any] | list[dict[str, Any]]: The parsed JSON response from the API, or an error dict.
     """
+    if not _PLAIN_PATH.fullmatch(url):
+        logger.error("Rejected request path: %s", url)
+        return {
+            "error": True,
+            "message": "Invalid identifier: only letters, digits, '-' and '_' are allowed.",
+        }
+
     # Prepare request configuration
     full_url, auth, headers, error_msg = _prepare_request_config(url, api_key, method)
     if error_msg:

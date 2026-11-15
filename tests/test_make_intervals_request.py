@@ -105,6 +105,36 @@ def test_make_intervals_request_bad_json(monkeypatch, caplog):
     assert "Invalid JSON in response" in result["message"]
 
 
+async def _no_network():
+    raise AssertionError("a request was about to be sent")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/athlete/i1/events/../../../activity/i150000001",  # DELETE would delete an activity
+        "/athlete/i1/events/116000003?others=true",  # would also delete the sibling events
+        "/activity/../athlete/i1/events?x=/messages",
+        "/athlete/i1/events/1 2",
+        "",
+    ],
+)
+def test_make_intervals_request_rejects_paths_that_would_reroute(monkeypatch, url):
+    """Ids are interpolated into the path: one that reaches another endpoint sends nothing."""
+    monkeypatch.setattr(api_client, "_get_httpx_client", _no_network)
+    result = asyncio.run(server.make_intervals_request(url, method="DELETE"))
+    assert result["error"] is True
+    assert "Invalid identifier" in result["message"]
+
+
+def test_delete_event_cannot_delete_an_activity(monkeypatch):
+    """Regression: delete_event("../../../activity/i1") sent DELETE /activity/i1 and answered
+    "Successfully deleted"."""
+    monkeypatch.setattr(api_client, "_get_httpx_client", _no_network)
+    result = asyncio.run(server.delete_event("../../../activity/i150000001", athlete_id="i1"))
+    assert result.startswith("Error deleting event: Invalid identifier")
+
+
 def test_parse_response_keeps_http_status_for_non_json_error_body():
     """A 503 with an HTML body is an HTTP error (status kept), not "Invalid JSON"."""
     response = httpx.Response(
