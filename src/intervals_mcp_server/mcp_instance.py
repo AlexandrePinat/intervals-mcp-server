@@ -7,6 +7,6 @@ the server module and tool modules without creating cyclic imports.
 
 from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error
 
-from intervals_mcp_server.api.client import setup_api_client
-
-mcp: FastMCP = FastMCP("intervals-icu", lifespan=setup_api_client)  # pylint: disable=invalid-name
+# Pas de lifespan : FastMCP l'exécute par session (par requête en mode sans état), et y fermer le
+# client httpx partagé coupait les requêtes en cours des autres appels.
+mcp: FastMCP = FastMCP("intervals-icu")  # pylint: disable=invalid-name

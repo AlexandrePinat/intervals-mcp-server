@@ -58,6 +58,12 @@ def start_server(mcp_instance: FastMCP, transport: TransportAliases) -> None:
     port = int(os.getenv("FASTMCP_PORT", str(mcp_instance.settings.port)))
     mcp_instance.settings.host = host
     mcp_instance.settings.port = port
+    # Idem pour le mode sans état : FastMCP ignore FASTMCP_STATELESS_HTTP, et sans lui les sessions
+    # vivent en mémoire et meurent à chaque réveil du conteneur (404 « Session not found »).
+    mcp_instance.settings.stateless_http = os.getenv("FASTMCP_STATELESS_HTTP", "").lower() in (
+        "1",
+        "true",
+    )
 
     if transport == TransportAliases.STDIO:
         logger.info("Starting MCP server with stdio transport.")

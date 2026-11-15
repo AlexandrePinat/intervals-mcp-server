@@ -9,12 +9,10 @@ from json import JSONDecodeError
 import json
 import logging
 import sys
-from contextlib import asynccontextmanager
 from http import HTTPStatus
 from typing import Any
 
 import httpx  # pylint: disable=import-error
-from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error
 
 from intervals_mcp_server.config import get_config
 
@@ -52,33 +50,6 @@ async def _get_httpx_client() -> httpx.AsyncClient:
     if httpx_client is None or httpx_client.is_closed:
         httpx_client = httpx.AsyncClient()
     return httpx_client
-
-
-@asynccontextmanager
-async def setup_api_client(_app: FastMCP):
-    """
-    Context manager to ensure the shared httpx client is closed when the server stops.
-
-    Args:
-        _app (FastMCP): The MCP server application instance.
-    """
-    try:
-        yield
-    finally:
-        # Close the module-level httpx_client
-        if httpx_client and not httpx_client.is_closed:
-            await httpx_client.aclose()
-
-        # Also close server.httpx_client if it exists (for test compatibility)
-        # This ensures monkeypatched clients in tests are properly closed
-        try:
-            server_module = sys.modules.get("intervals_mcp_server.server")
-            if server_module and hasattr(server_module, "httpx_client"):
-                server_client = getattr(server_module, "httpx_client", None)
-                if server_client is not None and not server_client.is_closed:
-                    await server_client.aclose()
-        except (AttributeError, ImportError):
-            pass
 
 
 def _get_error_message(error_code: int, error_text: str) -> str:

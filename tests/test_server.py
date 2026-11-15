@@ -45,6 +45,8 @@ from intervals_mcp_server.server import (  # pylint: disable=wrong-import-positi
     update_custom_item,
     delete_custom_item,
 )
+from intervals_mcp_server.mcp_instance import mcp  # pylint: disable=wrong-import-position
+from intervals_mcp_server.server_setup import start_server  # pylint: disable=wrong-import-position
 from intervals_mcp_server.tools import gear as gear_module  # pylint: disable=wrong-import-position
 from intervals_mcp_server.tools.activities import (  # pylint: disable=wrong-import-position
     _downsample_stream,
@@ -53,6 +55,7 @@ from intervals_mcp_server.tools.activities import (  # pylint: disable=wrong-imp
 from intervals_mcp_server.tools.events import (  # pylint: disable=wrong-import-position
     add_or_update_note,
 )
+from intervals_mcp_server.utils.types import TransportAliases  # pylint: disable=wrong-import-position
 from tests.sample_data import INTERVALS_DATA, POWER_CURVES_DATA  # pylint: disable=wrong-import-position
 
 
@@ -1173,3 +1176,18 @@ def test_get_activities_stays_in_requested_range(monkeypatch):
     )
     assert "Only run" in result
     assert [url for url in urls if url.endswith("/activities")] == ["/athlete/1/activities"]
+
+
+def test_start_server_applies_stateless_env(monkeypatch):
+    """Regression: FastMCP ignores FASTMCP_STATELESS_HTTP (its constructor defaults win), so the
+    container kept sessions in memory and answered "Session not found" after every restart."""
+    monkeypatch.setattr(mcp.settings, "stateless_http", False)  # restored after the test
+    monkeypatch.setattr(mcp, "run", lambda **_kwargs: None)
+
+    monkeypatch.setenv("FASTMCP_STATELESS_HTTP", "true")
+    start_server(mcp, TransportAliases.STREAMABLE_HTTP)
+    assert mcp.settings.stateless_http is True
+
+    monkeypatch.delenv("FASTMCP_STATELESS_HTTP")
+    start_server(mcp, TransportAliases.STREAMABLE_HTTP)
+    assert mcp.settings.stateless_http is False
