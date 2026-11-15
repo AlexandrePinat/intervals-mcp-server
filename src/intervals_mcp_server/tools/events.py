@@ -235,7 +235,8 @@ async def _fetch_events_for_deletion(
     return events, None
 
 
-@mcp.tool()
+# Not an MCP tool anymore: without `category` it deletes every event of the range (notes, races,
+# targets included), and an unattended run could call it. Clients delete one event at a time.
 async def delete_events_by_date_range(
     start_date: str,
     end_date: str,

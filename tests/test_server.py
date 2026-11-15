@@ -1140,6 +1140,14 @@ def test_delete_events_by_date_range_category(monkeypatch):
     assert "Deleted 2 WORKOUT events" in result
 
 
+def test_delete_events_by_date_range_is_not_exposed():
+    """Without `category` the range delete wipes notes, races and targets too: no client, and no
+    unattended run, may call it. Single deletions stay available."""
+    names = {tool.name for tool in asyncio.run(mcp.list_tools())}
+    assert "delete_events_by_date_range" not in names
+    assert "delete_event" in names
+
+
 def test_get_gear_list_does_not_cache_errors(monkeypatch):
     """A failed /gear call is not cached: the next call retries instead of reporting no gear."""
     _reset_gear_cache()
