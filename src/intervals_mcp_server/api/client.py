@@ -8,17 +8,20 @@ including request management, error handling, and client lifecycle.
 from json import JSONDecodeError
 import json
 import logging
+import re
 import sys
-from contextlib import asynccontextmanager
 from http import HTTPStatus
 from typing import Any
 
 import httpx  # pylint: disable=import-error
-from mcp.server.fastmcp import FastMCP  # pylint: disable=import-error
 
 from intervals_mcp_server.config import get_config
 
 logger = logging.getLogger("intervals_icu_mcp_server")
+
+# Event and activity ids are interpolated into the path: "../../../activity/i1" or "1?others=true"
+# would reach another Intervals.icu endpoint (delete_event deleting an activity).
+_PLAIN_PATH = re.compile(r"(/[A-Za-z0-9_-]+)+")
 
 # Create a single AsyncClient instance for all requests (lazily initialized)
 # This can be monkeypatched via server.httpx_client for testing
@@ -52,33 +55,6 @@ async def _get_httpx_client() -> httpx.AsyncClient:
     if httpx_client is None or httpx_client.is_closed:
         httpx_client = httpx.AsyncClient()
     return httpx_client
-
-
-@asynccontextmanager
-async def setup_api_client(_app: FastMCP):
-    """
-    Context manager to ensure the shared httpx client is closed when the server stops.
-
-    Args:
-        _app (FastMCP): The MCP server application instance.
-    """
-    try:
-        yield
-    finally:
-        # Close the module-level httpx_client
-        if httpx_client and not httpx_client.is_closed:
-            await httpx_client.aclose()
-
-        # Also close server.httpx_client if it exists (for test compatibility)
-        # This ensures monkeypatched clients in tests are properly closed
-        try:
-            server_module = sys.modules.get("intervals_mcp_server.server")
-            if server_module and hasattr(server_module, "httpx_client"):
-                server_client = getattr(server_module, "httpx_client", None)
-                if server_client is not None and not server_client.is_closed:
-                    await server_client.aclose()
-        except (AttributeError, ImportError):
-            pass
 
 
 def _get_error_message(error_code: int, error_text: str) -> str:
@@ -116,8 +92,9 @@ def _prepare_request_config(
     if method in ["POST", "PUT"]:
         headers["Content-Type"] = "application/json"
 
-    # Use provided api_key or fall back to global API_KEY
-    key_to_use = api_key if api_key is not None else config.api_key
+    # The server's own key wins: a caller-supplied one would send the request, and what it
+    # carries, to another account. The parameter only serves a server started without API_KEY.
+    key_to_use = config.api_key or api_key
     if not key_to_use:
         logger.error("No API key provided for request to: %s", url)
         return (
@@ -169,6 +146,13 @@ async def make_intervals_request(
     Returns:
         dict[str, Any] | list[dict[str, Any]]: The parsed JSON response from the API, or an error dict.
     """
+    if not _PLAIN_PATH.fullmatch(url):
+        logger.error("Rejected request path: %s", url)
+        return {
+            "error": True,
+            "message": "Invalid identifier: only letters, digits, '-' and '_' are allowed.",
+        }
+
     # Prepare request configuration
     full_url, auth, headers, error_msg = _prepare_request_config(url, api_key, method)
     if error_msg:
