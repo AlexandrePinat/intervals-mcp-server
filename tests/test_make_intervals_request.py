@@ -135,6 +135,38 @@ def test_delete_event_cannot_delete_an_activity(monkeypatch):
     assert result.startswith("Error deleting event: Invalid identifier")
 
 
+def _authorization(auth):
+    """The Authorization header an httpx auth object puts on a request."""
+    return next(auth.auth_flow(httpx.Request("GET", "https://intervals.icu"))).headers[
+        "Authorization"
+    ]
+
+
+def test_server_api_key_wins_over_a_caller_supplied_key(monkeypatch):
+    """Regression: a caller-supplied api_key replaced the server's, so a tool call could write to
+    another account; an empty string made the call fail instead of using the server's key."""
+
+    def config(api_key):
+        return lambda: Config(
+            api_key=api_key,
+            athlete_id="i1",
+            intervals_api_base_url="https://intervals.icu/api/v1",
+            user_agent="test-agent",
+        )
+
+    monkeypatch.setattr(api_client, "get_config", config("server-key"))
+    for caller_key in ("someone-else", "", None):
+        _url, auth, _headers, error = api_client._prepare_request_config("/x", caller_key, "GET")  # pylint: disable=protected-access
+        assert error is None
+        assert _authorization(auth) == _authorization(httpx.BasicAuth("API_KEY", "server-key"))
+
+    # A server started without API_KEY still accepts the caller's key.
+    monkeypatch.setattr(api_client, "get_config", config(""))
+    _url, auth, _headers, error = api_client._prepare_request_config("/x", "caller-key", "GET")  # pylint: disable=protected-access
+    assert error is None
+    assert _authorization(auth) == _authorization(httpx.BasicAuth("API_KEY", "caller-key"))
+
+
 def test_parse_response_keeps_http_status_for_non_json_error_body():
     """A 503 with an HTML body is an HTTP error (status kept), not "Invalid JSON"."""
     response = httpx.Response(

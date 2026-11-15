@@ -171,8 +171,8 @@ def test_get_event_by_id_uses_events_endpoint(monkeypatch):
         return {"id": 115873241, "date": "2024-01-01", "name": "Test Event", "description": "desc"}
 
     monkeypatch.setattr("intervals_mcp_server.tools.events.make_intervals_request", fake_request)
-    result = asyncio.run(get_event_by_id("115873241", athlete_id="1"))
-    assert captured["url"] == "/athlete/1/events/115873241"
+    result = asyncio.run(get_event_by_id("115873241", athlete_id="i1"))
+    assert captured["url"] == "/athlete/i1/events/115873241"
     assert "Test Event" in result
 
 
@@ -1134,9 +1134,9 @@ def test_delete_events_by_date_range_category(monkeypatch):
     monkeypatch.setattr("intervals_mcp_server.tools.events.make_intervals_request", fake_request)
 
     result = asyncio.run(
-        delete_events_by_date_range("2024-01-01", "2024-01-07", athlete_id="1", category="workout")
+        delete_events_by_date_range("2024-01-01", "2024-01-07", athlete_id="i1", category="workout")
     )
-    assert deleted == ["/athlete/1/events/1", "/athlete/1/events/4"]
+    assert deleted == ["/athlete/i1/events/1", "/athlete/i1/events/4"]
     assert "Deleted 2 WORKOUT events" in result
 
 
@@ -1180,10 +1180,10 @@ def test_get_activities_stays_in_requested_range(monkeypatch):
     monkeypatch.setattr("intervals_mcp_server.tools.gear.make_intervals_request", fake_request)
 
     result = asyncio.run(
-        get_activities(athlete_id="1", start_date="2024-06-01", end_date="2024-06-30", limit=10)
+        get_activities(athlete_id="i1", start_date="2024-06-01", end_date="2024-06-30", limit=10)
     )
     assert "Only run" in result
-    assert [url for url in urls if url.endswith("/activities")] == ["/athlete/1/activities"]
+    assert [url for url in urls if url.endswith("/activities")] == ["/athlete/i1/activities"]
 
 
 def test_start_server_applies_stateless_env(monkeypatch):

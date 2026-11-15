@@ -62,3 +62,11 @@ def test_resolve_athlete_id_rejects_ids_that_would_reroute_the_url():
         athlete_id, error = resolve_athlete_id(bad)
         assert athlete_id == ""
         assert error and error.startswith("Error:")
+
+
+def test_resolve_athlete_id_configured_athlete_wins():
+    """Regression: a caller-supplied athlete_id replaced the server's, and an empty string made
+    the call fail instead of falling back to it."""
+    assert resolve_athlete_id("i999999", "i1") == ("i1", None)
+    assert resolve_athlete_id("", "i1") == ("i1", None)
+    assert resolve_athlete_id(None, "i1") == ("i1", None)

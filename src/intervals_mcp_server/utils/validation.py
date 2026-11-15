@@ -50,18 +50,19 @@ def validate_date(date_str: str) -> str:
 def resolve_athlete_id(
     athlete_id: str | None, default_athlete_id: str = ""
 ) -> tuple[str, str | None]:
-    """Resolve athlete ID from parameter or default, with error message if missing.
+    """Resolve athlete ID from the configured default, else the parameter; error if missing.
 
     Args:
-        athlete_id: Optional athlete ID parameter.
-        default_athlete_id: Default athlete ID to use if athlete_id is None.
+        athlete_id: Optional athlete ID parameter, used only when no default is configured.
+        default_athlete_id: Configured athlete ID. It wins when set.
 
     Returns:
         Tuple of (athlete_id_to_use, error_message).
         athlete_id_to_use will be empty string if not found.
         error_message will be None if athlete_id is resolved successfully.
     """
-    athlete_id_to_use = athlete_id if athlete_id is not None else default_athlete_id
+    # Same rule as the API key: the server's athlete wins over a caller-supplied one.
+    athlete_id_to_use = default_athlete_id or athlete_id
     if not athlete_id_to_use:
         return (
             "",

@@ -92,8 +92,9 @@ def _prepare_request_config(
     if method in ["POST", "PUT"]:
         headers["Content-Type"] = "application/json"
 
-    # Use provided api_key or fall back to global API_KEY
-    key_to_use = api_key if api_key is not None else config.api_key
+    # The server's own key wins: a caller-supplied one would send the request, and what it
+    # carries, to another account. The parameter only serves a server started without API_KEY.
+    key_to_use = config.api_key or api_key
     if not key_to_use:
         logger.error("No API key provided for request to: %s", url)
         return (
